@@ -4,6 +4,7 @@ import shutil
 import sys
 from email import policy
 from email.parser import BytesParser
+from email.utils import parsedate_to_datetime
 
 ROOT_PATH = os.path.abspath(os.getcwd())
 DEFAULT_EML_FILES_FOLDER_PATH = os.path.join(ROOT_PATH, 'samples')
@@ -12,7 +13,7 @@ OUTPUT_TEXT_FILE_PATH = os.path.join(ROOT_PATH, 'output.txt')
 
 
 def extract_text_and_metadata_from_eml(eml_file):
-    """Extracts all headers and plain text from an .eml file."""
+    """Extracts all headers, date, and plain text from an .eml file, logging a warning if attachments are ignored."""
     with open(eml_file, 'rb') as file:
         msg = BytesParser(policy=policy.default).parse(file)
 
@@ -23,6 +24,9 @@ def extract_text_and_metadata_from_eml(eml_file):
         'Subject': msg['Subject'],
         'Date': msg['Date']
     }
+
+    # Parse the date header to a datetime object
+    email_date = parsedate_to_datetime(headers['Date'])
 
     # Initialize text content with metadata
     text_content = "\n".join(f"{key}: {value}" for key, value in headers.items()) + "\n\n"
@@ -43,18 +47,23 @@ def extract_text_and_metadata_from_eml(eml_file):
     if attachment_found:
         print(f"Warning: The email '{os.path.basename(eml_file)}' contains one or more attachments that were ignored.")
 
-    return text_content
+    return email_date, text_content
 
 
 def convert_eml_to_text_with_metadata(eml_folder, output_folder):
-    """Converts all .eml files in a folder to individual text files, including metadata."""
+    """
+    Converts all *.eml files in a folder to individual text files,
+    including metadata, and returns a sorted list of files by date.
+    """
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
     eml_files = glob.glob(os.path.join(eml_folder, '*.eml'))
 
+    email_data = []
+
     for eml_file in eml_files:
-        text_content = extract_text_and_metadata_from_eml(eml_file)
+        email_date, text_content = extract_text_and_metadata_from_eml(eml_file)
         base_name = os.path.basename(eml_file)
         txt_file_name = os.path.splitext(base_name)[0] + '.txt'
         txt_file_path = os.path.join(output_folder, txt_file_name)
@@ -62,18 +71,29 @@ def convert_eml_to_text_with_metadata(eml_folder, output_folder):
         with open(txt_file_path, 'w', encoding='utf-8') as text_file:
             text_file.write(text_content)
 
+        # Append the extracted data to the list
+        email_data.append((email_date, txt_file_path))
 
-def merge_text_files(output_folder, merged_output_file):
-    """Merges all text files in a folder into one big text file."""
+    # Sort the emails by date
+    email_data.sort(key=lambda x: x[0])
+
+    return email_data
+
+
+def merge_text_files(sorted_email_data, merged_output_file):
+    """Merges all text files in a folder into one big text file with start and end markers, sorted chronologically."""
     with open(merged_output_file, 'w', encoding='utf-8') as outfile:
-        for txt_file in glob.glob(os.path.join(output_folder, '*.txt')):
+        for email_date, txt_file in sorted_email_data:
             file_name = os.path.basename(txt_file)
-            outfile.write(f'\n--- START: {file_name} ---\n')
+
+            # Write start marker with file name
+            outfile.write(f"--- START OF {file_name} ({email_date.strftime('%Y-%m-%d %H:%M:%S')}) ---\n")
 
             with open(txt_file, 'r', encoding='utf-8') as infile:
                 outfile.write(infile.read())
 
-            outfile.write(f'\n--- END: {file_name} ---\n\n')
+            # Write end marker with file name
+            outfile.write(f"\n--- END OF {file_name} ---\n\n")
             print(f'Processed {txt_file}')
 
 
@@ -102,9 +122,13 @@ def main():
 
     prompt_to_delete_output_folder(output_folder)
 
-    convert_eml_to_text_with_metadata(eml_folder, output_folder)
-    merge_text_files(output_folder, merged_output_file)
-    print(f'DONE! All .eml files have been converted and merged into {merged_output_file}')
+    sorted_email_data = convert_eml_to_text_with_metadata(eml_folder, output_folder)
+    eml_file_count = len(sorted_email_data)
+
+    merge_text_files(sorted_email_data, merged_output_file)
+
+    print(f'DONE! All {eml_file_count} .eml files have been converted,'
+          f' sorted chronologically and merged into {merged_output_file}')
 
 
 if __name__ == "__main__":
