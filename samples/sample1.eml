@@ -1,0 +1,12 @@
+From: alice@example.com
+To: bob@example.com
+Subject: Hello
+Date: Mon, 28 Aug 2023 09:30:00 -0400
+Content-Type: text/plain; charset="utf-8"
+
+Hi Bob,
+
+I just wanted to say hello and see how you're doing. Hope all is well!
+
+Best,
+Alice
